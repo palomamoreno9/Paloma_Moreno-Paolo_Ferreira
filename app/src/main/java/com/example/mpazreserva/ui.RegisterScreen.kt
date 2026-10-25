@@ -29,7 +29,6 @@ fun RegisterScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
-    var rolSeleccionado by remember { mutableStateOf("Solicitante") }
 
     // Estados para rastrear si el usuario ya intentó enviar el formulario
     var intentoEnvio by remember { mutableStateOf(false) }
@@ -71,9 +70,10 @@ fun RegisterScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Crear Cuenta",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.primary
+                        text = "Crear Cuenta de Solicitante",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
                     )
 
                     Spacer(modifier = Modifier.height(16.dp))
@@ -162,32 +162,6 @@ fun RegisterScreen(
                         singleLine = true
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // Selección de Rol
-                    Text(
-                        text = "Selecciona tu Rol:",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        FilterChip(
-                            selected = rolSeleccionado == "Solicitante",
-                            onClick = { rolSeleccionado = "Solicitante" },
-                            label = { Text("Solicitante") }
-                        )
-                        FilterChip(
-                            selected = rolSeleccionado == "Inspectoria",
-                            onClick = { rolSeleccionado = "Inspectoria" },
-                            label = { Text("Inspectoría") }
-                        )
-                    }
-
                     // Alerta General de Error
                     AnimatedVisibility(
                         visible = mensajeGeneralError.isNotEmpty(),
@@ -212,12 +186,13 @@ fun RegisterScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Botón de Envío
+                    // Botón de Envío (Rol forzado a "Solicitante")
                     Button(
                         onClick = {
                             intentoEnvio = true
                             if (nombreValido && emailValido && passwordValida && confirmacionValida) {
-                                onRegistroExitoso(email, rolSeleccionado)
+                                // Aquí forzamos que todos los registros sean "Solicitante"
+                                onRegistroExitoso(email, "Solicitante")
                             } else {
                                 mensajeGeneralError = "Por favor corrige los campos remarcados en rojo."
                             }
