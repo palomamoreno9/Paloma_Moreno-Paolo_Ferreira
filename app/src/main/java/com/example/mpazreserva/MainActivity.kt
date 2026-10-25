@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material3.*
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.mpazreserva.ui.LoginScreen
 import com.example.mpazreserva.ui.RegisterScreen
+import com.example.mpazreserva.ui.SolicitudReservaScreen
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -27,6 +29,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MaterialTheme {
+                // Estados de navegación: "BIENVENIDA", "LOGIN", "REGISTRO", "DASHBOARD", "NUEVA_RESERVA"
                 var pantallaActual by remember { mutableStateOf("BIENVENIDA") }
                 var usuarioLogueado by remember { mutableStateOf<Pair<String, String>?>(null) }
 
@@ -72,7 +75,15 @@ class MainActivity : ComponentActivity() {
                                 usuarioLogueado = null
                                 pantallaActual = "BIENVENIDA"
                                 Toast.makeText(this, "Sesión cerrada correctamente", Toast.LENGTH_SHORT).show()
-                            }
+                            },
+                            onNuevaReserva = { pantallaActual = "NUEVA_RESERVA" }
+                        )
+                    }
+                    "NUEVA_RESERVA" -> {
+                        SolicitudReservaScreen(
+                            emailSolicitante = usuarioLogueado?.first ?: "",
+                            onReservaCreada = { pantallaActual = "DASHBOARD" },
+                            onVolver = { pantallaActual = "DASHBOARD" }
                         )
                     }
                 }
@@ -183,7 +194,12 @@ fun PantallaBienvenidaInicial(onIrALogin: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VistaBienvenidaUsuario(email: String, rol: String, onCerrarSesion: () -> Unit) {
+fun VistaBienvenidaUsuario(
+    email: String,
+    rol: String,
+    onCerrarSesion: () -> Unit,
+    onNuevaReserva: () -> Unit
+) {
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -197,6 +213,18 @@ fun VistaBienvenidaUsuario(email: String, rol: String, onCerrarSesion: () -> Uni
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
             )
+        },
+        floatingActionButton = {
+            // Solo mostramos el botón de nueva reserva si es Solicitante
+            if (rol == "Solicitante") {
+                FloatingActionButton(
+                    onClick = onNuevaReserva,
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Nueva Reserva")
+                }
+            }
         }
     ) { padding ->
         Box(
@@ -222,6 +250,23 @@ fun VistaBienvenidaUsuario(email: String, rol: String, onCerrarSesion: () -> Uni
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(text = "Rol activo: $rol", style = MaterialTheme.typography.bodyLarge)
                     Spacer(modifier = Modifier.height(24.dp))
+
+                    if (rol == "Solicitante") {
+                        Text(
+                            text = "Usa el botón '+' abajo a la derecha para solicitar un espacio.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center
+                        )
+                    } else {
+                        Text(
+                            text = "Aquí podrás revisar las solicitudes de los usuarios.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
                     OutlinedButton(
                         onClick = onCerrarSesion,
                         modifier = Modifier.fillMaxWidth()
