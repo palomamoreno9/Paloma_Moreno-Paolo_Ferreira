@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
@@ -30,11 +31,9 @@ fun RegisterScreen(
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
 
-    // Estados para rastrear si el usuario ya intentó enviar el formulario
     var intentoEnvio by remember { mutableStateOf(false) }
     var mensajeGeneralError by remember { mutableStateOf("") }
 
-    // Reglas de validación en tiempo real
     val nombreValido = nombre.trim().length >= 3
     val emailValido = Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()
     val passwordValida = password.length >= 6
@@ -43,7 +42,21 @@ fun RegisterScreen(
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Escuela Escritora Marcela Paz") },
+                // ¡Aquí agregamos el botón de retroceso!
+                navigationIcon = {
+                    IconButton(onClick = onVolverALogin) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Volver atrás"
+                        )
+                    }
+                },
+                title = {
+                    Text(
+                        text = "Registro",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
@@ -70,7 +83,7 @@ fun RegisterScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        text = "Crear Cuenta de Solicitante",
+                        text = "Crear Cuenta",
                         style = MaterialTheme.typography.titleLarge,
                         color = MaterialTheme.colorScheme.primary,
                         textAlign = TextAlign.Center
@@ -78,20 +91,14 @@ fun RegisterScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Campo Nombre Completo
                     OutlinedTextField(
                         value = nombre,
-                        onValueChange = {
-                            nombre = it
-                            mensajeGeneralError = ""
-                        },
+                        onValueChange = { nombre = it; mensajeGeneralError = "" },
                         label = { Text("Nombre Completo *") },
                         leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
                         isError = intentoEnvio && !nombreValido,
                         supportingText = {
-                            if (intentoEnvio && !nombreValido) {
-                                Text("El nombre debe tener al menos 3 caracteres", color = MaterialTheme.colorScheme.error)
-                            }
+                            if (intentoEnvio && !nombreValido) Text("El nombre debe tener al menos 3 caracteres", color = MaterialTheme.colorScheme.error)
                         },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
@@ -99,20 +106,14 @@ fun RegisterScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Campo Correo Institucional
                     OutlinedTextField(
                         value = email,
-                        onValueChange = {
-                            email = it
-                            mensajeGeneralError = ""
-                        },
+                        onValueChange = { email = it; mensajeGeneralError = "" },
                         label = { Text("Correo Institucional *") },
                         leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
                         isError = intentoEnvio && !emailValido,
                         supportingText = {
-                            if (intentoEnvio && !emailValido) {
-                                Text("Ingrese un correo válido (ejemplo@dominio.com)", color = MaterialTheme.colorScheme.error)
-                            }
+                            if (intentoEnvio && !emailValido) Text("Ingrese un correo válido (ejemplo@dominio.com)", color = MaterialTheme.colorScheme.error)
                         },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
@@ -120,21 +121,15 @@ fun RegisterScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Campo Contraseña
                     OutlinedTextField(
                         value = password,
-                        onValueChange = {
-                            password = it
-                            mensajeGeneralError = ""
-                        },
+                        onValueChange = { password = it; mensajeGeneralError = "" },
                         label = { Text("Contraseña *") },
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                         visualTransformation = PasswordVisualTransformation(),
                         isError = intentoEnvio && !passwordValida,
                         supportingText = {
-                            if (intentoEnvio && !passwordValida) {
-                                Text("La contraseña debe tener mínimo 6 caracteres", color = MaterialTheme.colorScheme.error)
-                            }
+                            if (intentoEnvio && !passwordValida) Text("La contraseña debe tener mínimo 6 caracteres", color = MaterialTheme.colorScheme.error)
                         },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
@@ -142,27 +137,20 @@ fun RegisterScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Campo Confirmar Contraseña
                     OutlinedTextField(
                         value = confirmPassword,
-                        onValueChange = {
-                            confirmPassword = it
-                            mensajeGeneralError = ""
-                        },
+                        onValueChange = { confirmPassword = it; mensajeGeneralError = "" },
                         label = { Text("Confirmar Contraseña *") },
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                         visualTransformation = PasswordVisualTransformation(),
                         isError = intentoEnvio && !confirmacionValida,
                         supportingText = {
-                            if (intentoEnvio && !confirmacionValida) {
-                                Text("Las contraseñas no coinciden", color = MaterialTheme.colorScheme.error)
-                            }
+                            if (intentoEnvio && !confirmacionValida) Text("Las contraseñas no coinciden", color = MaterialTheme.colorScheme.error)
                         },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
 
-                    // Alerta General de Error
                     AnimatedVisibility(
                         visible = mensajeGeneralError.isNotEmpty(),
                         enter = fadeIn(),
@@ -170,9 +158,7 @@ fun RegisterScreen(
                     ) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.errorContainer
-                            )
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                         ) {
                             Text(
                                 text = mensajeGeneralError,
@@ -186,12 +172,10 @@ fun RegisterScreen(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Botón de Envío (Rol forzado a "Solicitante")
                     Button(
                         onClick = {
                             intentoEnvio = true
                             if (nombreValido && emailValido && passwordValida && confirmacionValida) {
-                                // Aquí forzamos que todos los registros sean "Solicitante"
                                 onRegistroExitoso(email, "Solicitante")
                             } else {
                                 mensajeGeneralError = "Por favor corrige los campos remarcados en rojo."
@@ -200,12 +184,6 @@ fun RegisterScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Registrarse")
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    TextButton(onClick = onVolverALogin) {
-                        Text("¿Ya tienes cuenta? Inicia sesión")
                     }
                 }
             }
