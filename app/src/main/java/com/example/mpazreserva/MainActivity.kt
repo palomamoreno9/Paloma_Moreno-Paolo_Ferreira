@@ -13,11 +13,11 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.ExitToApp
-import androidx.compose.material.icons.filled.FactCheck
-import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,6 +33,19 @@ import com.example.mpazreserva.ui.MisReservasScreen
 import com.example.mpazreserva.ui.RegisterScreen
 import com.example.mpazreserva.ui.SolicitudReservaScreen
 
+// MODELO DE DATOS INCLUIDO EN EL MISMO ARCHIVO
+data class Reserva(
+    val id: Int,
+    val solicitante: String,
+    val espacio: String,
+    val fecha: String,
+    val horario: String,
+    val actividad: String,
+    val documentoUrl: String = "",
+    var estado: String = "Pendiente",
+    var motivoRechazo: String = ""
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -41,6 +54,14 @@ class MainActivity : ComponentActivity() {
             MaterialTheme {
                 var pantallaActual by remember { mutableStateOf("BIENVENIDA") }
                 var usuarioLogueado by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+                // LISTA DE RESERVAS COMPARTIDA EN MEMORIA
+                val listaReservas = remember {
+                    mutableStateListOf(
+                        Reserva(1, "profe.juan@mpaz.cl", "Lab. de Computación", "15/11/2026", "10:00 - 11:30", "Clase de Excel", "doc1.pdf"),
+                        Reserva(2, "utp@mpaz.cl", "Biblioteca", "16/11/2026", "08:00 - 09:30", "Lectura Comprensiva", "doc2.pdf")
+                    )
+                }
 
                 when (pantallaActual) {
                     "BIENVENIDA" -> PantallaBienvenidaInicial(onIrALogin = { pantallaActual = "LOGIN" })
@@ -70,14 +91,26 @@ class MainActivity : ComponentActivity() {
                         onNuevaReserva = { pantallaActual = "NUEVA_RESERVA" },
                         onVerSolicitudes = { pantallaActual = "PANEL_INSPECTORIA" },
                         onEditarPerfil = { pantallaActual = "EDITAR_PERFIL" },
-                        onVerMisReservas = { pantallaActual = "MIS_RESERVAS" } // <--- NUEVA PANTALLA
+                        onVerMisReservas = { pantallaActual = "MIS_RESERVAS" }
                     )
                     "NUEVA_RESERVA" -> SolicitudReservaScreen(
                         emailSolicitante = usuarioLogueado?.first ?: "",
+                        onAgregarReserva = { nueva -> listaReservas.add(nueva) },
                         onReservaCreada = { pantallaActual = "DASHBOARD" },
                         onVolver = { pantallaActual = "DASHBOARD" }
                     )
-                    "PANEL_INSPECTORIA" -> InspectoriaScreen(onVolver = { pantallaActual = "DASHBOARD" })
+                    "PANEL_INSPECTORIA" -> InspectoriaScreen(
+                        listaReservas = listaReservas,
+                        onAprobarReserva = { id ->
+                            val index = listaReservas.indexOfFirst { it.id == id }
+                            if (index != -1) listaReservas[index] = listaReservas[index].copy(estado = "Aprobada")
+                        },
+                        onRechazarReserva = { id, motivo ->
+                            val index = listaReservas.indexOfFirst { it.id == id }
+                            if (index != -1) listaReservas[index] = listaReservas[index].copy(estado = "Rechazada", motivoRechazo = motivo)
+                        },
+                        onVolver = { pantallaActual = "DASHBOARD" }
+                    )
                     "EDITAR_PERFIL" -> EditarPerfilScreen(
                         emailActual = usuarioLogueado?.first ?: "",
                         onGuardar = { pantallaActual = "DASHBOARD" },
@@ -85,6 +118,7 @@ class MainActivity : ComponentActivity() {
                     )
                     "MIS_RESERVAS" -> MisReservasScreen(
                         emailActual = usuarioLogueado?.first ?: "",
+                        listaReservas = listaReservas,
                         onVolver = { pantallaActual = "DASHBOARD" }
                     )
                 }
@@ -111,7 +145,7 @@ fun PantallaBienvenidaInicial(onIrALogin: () -> Unit) {
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedButton(onClick = { mostrarEstado = !mostrarEstado }, modifier = Modifier.fillMaxWidth()) { Text(if (mostrarEstado) "Ocultar Estado" else "Ver Estado del Sistema") }
                     AnimatedVisibility(visible = mostrarEstado, enter = fadeIn(), exit = fadeOut()) {
-                        Text("✓ Sistema activo y base de datos Room sincronizada.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 16.dp))
+                        Text("✓ Sistema activo en modo demostración.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 16.dp))
                     }
                 }
             }
@@ -131,6 +165,14 @@ fun VistaBienvenidaUsuario(
     onVerMisReservas: () -> Unit
 ) {
     val context = LocalContext.current
+
+    val nombreUsuario = if (email.contains("@")) {
+        email.substringBefore("@").replaceFirstChar { it.uppercase() }
+    } else if (email.isNotBlank()) {
+        email.replaceFirstChar { it.uppercase() }
+    } else {
+        "Usuario"
+    }
 
     Scaffold(
         topBar = {
@@ -152,46 +194,28 @@ fun VistaBienvenidaUsuario(
         },
         floatingActionButton = {
             if (rol == "Solicitante") {
-                FloatingActionButton(onClick = onNuevaReserva, containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
-                    Icon(Icons.Default.Add, "Nueva Reserva")
-                }
+                FloatingActionButton(onClick = onNuevaReserva, containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Default.Add, "Nueva Reserva") }
             }
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), contentAlignment = Alignment.Center) {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    val textoSaludo = if (rol == "Inspectoria") "¡Bienvenida, Inspectora!" else "¡Hola, $email!"
+                    val textoSaludo = if (rol == "Inspectoria") "¡Bienvenida, Inspectora!" else "¡Hola, $nombreUsuario!"
                     Text(text = textoSaludo, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(text = "Rol activo: $rol", style = MaterialTheme.typography.bodyLarge)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(text = "Correo registrado: $email", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(modifier = Modifier.height(24.dp))
 
                     if (rol == "Solicitante") {
-                        // AQUÍ ESTÁ EL NUEVO BOTÓN PARA EL SOLICITANTE
                         Text("Revisa el estado de tus reservas aquí:", textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 12.dp))
-                        Button(onClick = onVerMisReservas, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.List, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Ver Mis Solicitudes")
-                        }
+                        Button(onClick = onVerMisReservas, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Menu, null); Spacer(Modifier.width(8.dp)); Text("Ver Mis Solicitudes") }
                     } else {
                         Text("Administra las solicitudes de reservas aquí:", textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 12.dp))
-                        Button(onClick = onVerSolicitudes, modifier = Modifier.fillMaxWidth()) {
-                            Icon(Icons.Default.FactCheck, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Ver Solicitudes Pendientes")
-                        }
+                        Button(onClick = onVerSolicitudes, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Check, null); Spacer(Modifier.width(8.dp)); Text("Ver Solicitudes Pendientes") }
                     }
-
                     Spacer(modifier = Modifier.height(16.dp))
-
-                    OutlinedButton(onClick = onEditarPerfil, modifier = Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Edit, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Editar Perfil")
-                    }
-
+                    OutlinedButton(onClick = onEditarPerfil, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Person, null); Spacer(Modifier.width(8.dp)); Text("Editar Perfil") }
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedButton(onClick = onCerrarSesion, modifier = Modifier.fillMaxWidth()) { Text("Cerrar Sesión") }
                 }
