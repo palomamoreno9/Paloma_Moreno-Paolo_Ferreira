@@ -3,34 +3,43 @@ package com.example.mpazreserva.ui
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PendingActions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-// Agregamos "documentoUrl" para simular el archivo adjunto
-data class ReservaPendiente(
+// Modelo actualizado para soportar estados e historial
+data class Reserva(
     val id: Int,
     val solicitante: String,
     val espacio: String,
     val fecha: String,
     val horario: String,
     val actividad: String,
-    val documentoUrl: String
+    val documentoUrl: String,
+    var estado: String = "Pendiente", // "Pendiente", "Aprobada", "Rechazada"
+    var motivoRechazo: String = ""
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,38 +48,31 @@ fun InspectoriaScreen(
     onVolver: () -> Unit
 ) {
     val context = LocalContext.current
+    var pestañaActual by remember { mutableStateOf(0) } // 0: Pendientes, 1: Historial
 
-    // Lista de prueba con enlaces a un PDF real de demostración
     var listaReservas by remember {
         mutableStateOf(
             listOf(
-                ReservaPendiente(
-                    1, "profe.juan@mpaz.cl", "Lab. de Computación", "15/11/2026", "10:00 - 11:30", "Clase de Excel",
-                    "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-                ),
-                ReservaPendiente(
-                    2, "utp@mpaz.cl", "Biblioteca", "16/11/2026", "08:00 - 09:30", "Lectura Comprensiva",
-                    "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"
-                )
+                Reserva(1, "profe.juan@mpaz.cl", "Lab. de Computación", "15/11/2026", "10:00 - 11:30", "Clase de Excel", "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf"),
+                Reserva(2, "utp@mpaz.cl", "Biblioteca", "16/11/2026", "08:00 - 09:30", "Lectura Comprensiva", "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf")
             )
         )
     }
 
-    var reservaARechazar by remember { mutableStateOf<ReservaPendiente?>(null) }
+    var reservaARechazar by remember { mutableStateOf<Reserva?>(null) }
     var motivoRechazo by remember { mutableStateOf("") }
+
+    val reservasPendientes = listaReservas.filter { it.estado == "Pendiente" }
+    val reservasHistorial = listaReservas.filter { it.estado != "Pendiente" }
 
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = onVolver) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Volver")
-                    }
+                    IconButton(onClick = onVolver) { Icon(Icons.Default.ArrowBack, "Volver") }
                 },
                 title = { Text("Panel de Inspectoría") },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                )
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             )
         }
     ) { padding ->
@@ -78,58 +80,89 @@ fun InspectoriaScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
         ) {
-            Text(
-                text = "Solicitudes Pendientes",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(bottom = 16.dp)
-            )
+            // Pestañas (Tabs)
+            TabRow(selectedTabIndex = pestañaActual) {
+                Tab(
+                    selected = pestañaActual == 0,
+                    onClick = { pestañaActual = 0 },
+                    text = { Text("Pendientes (${reservasPendientes.size})") },
+                    icon = { Icon(Icons.Default.PendingActions, contentDescription = null) }
+                )
+                Tab(
+                    selected = pestañaActual == 1,
+                    onClick = { pestañaActual = 1 },
+                    text = { Text("Historial") },
+                    icon = { Icon(Icons.Default.History, contentDescription = null) }
+                )
+            }
 
-            if (listaReservas.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No hay solicitudes pendientes. ¡Todo al día!")
-                }
-            } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(listaReservas) { reserva ->
-                        ReservaCard(
-                            reserva = reserva,
-                            onAprobar = {
-                                listaReservas = listaReservas.filter { it.id != reserva.id }
-                                Toast.makeText(context, "Reserva Aprobada", Toast.LENGTH_SHORT).show()
-                            },
-                            onRechazar = { reservaARechazar = reserva },
-                            onVerDocumento = { url ->
-                                // AQUÍ USAMOS EL RECURSO NATIVO PARA ABRIR EL ARCHIVO
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "Error al abrir el documento", Toast.LENGTH_SHORT).show()
+            // Animación Crossfade entre pestañas
+            Crossfade(
+                targetState = pestañaActual,
+                animationSpec = tween(500),
+                label = "AnimacionTabs"
+            ) { tabSeleccionada ->
+                Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                    if (tabSeleccionada == 0) {
+                        // VISTA PENDIENTES
+                        if (reservasPendientes.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("No hay solicitudes pendientes.")
+                            }
+                        } else {
+                            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                items(reservasPendientes) { reserva ->
+                                    ReservaCard(
+                                        reserva = reserva,
+                                        esHistorial = false,
+                                        onAprobar = {
+                                            listaReservas = listaReservas.map { if (it.id == reserva.id) it.copy(estado = "Aprobada") else it }
+                                            Toast.makeText(context, "Reserva Aprobada", Toast.LENGTH_SHORT).show()
+                                        },
+                                        onRechazar = { reservaARechazar = reserva },
+                                        onVerDocumento = { url ->
+                                            try { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+                                            catch (e: Exception) { Toast.makeText(context, "Error al abrir documento", Toast.LENGTH_SHORT).show() }
+                                        }
+                                    )
                                 }
                             }
-                        )
+                        }
+                    } else {
+                        // VISTA HISTORIAL
+                        if (reservasHistorial.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text("El historial está vacío.")
+                            }
+                        } else {
+                            LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                items(reservasHistorial) { reserva ->
+                                    ReservaCard(
+                                        reserva = reserva,
+                                        esHistorial = true,
+                                        onAprobar = {}, onRechazar = {}, onVerDocumento = {}
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // Animación de Diálogo (Alerta) para justificar el rechazo
+        // Diálogo de Rechazo
         if (reservaARechazar != null) {
             AlertDialog(
                 onDismissRequest = { reservaARechazar = null; motivoRechazo = "" },
                 title = { Text("Rechazar Solicitud") },
                 text = {
                     Column {
-                        Text("Indique el motivo del rechazo para notificar al solicitante:")
+                        Text("Indique el motivo del rechazo:")
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedTextField(
-                            value = motivoRechazo,
-                            onValueChange = { motivoRechazo = it },
-                            label = { Text("Motivo de rechazo *") },
-                            modifier = Modifier.fillMaxWidth()
+                            value = motivoRechazo, onValueChange = { motivoRechazo = it },
+                            label = { Text("Motivo *") }, modifier = Modifier.fillMaxWidth()
                         )
                     }
                 },
@@ -138,7 +171,7 @@ fun InspectoriaScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         onClick = {
                             if (motivoRechazo.isNotBlank()) {
-                                listaReservas = listaReservas.filter { it.id != reservaARechazar!!.id }
+                                listaReservas = listaReservas.map { if (it.id == reservaARechazar!!.id) it.copy(estado = "Rechazada", motivoRechazo = motivoRechazo) else it }
                                 Toast.makeText(context, "Reserva Rechazada", Toast.LENGTH_SHORT).show()
                                 reservaARechazar = null
                                 motivoRechazo = ""
@@ -146,14 +179,10 @@ fun InspectoriaScreen(
                                 Toast.makeText(context, "Debe ingresar un motivo", Toast.LENGTH_SHORT).show()
                             }
                         }
-                    ) {
-                        Text("Confirmar")
-                    }
+                    ) { Text("Confirmar") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { reservaARechazar = null; motivoRechazo = "" }) {
-                        Text("Cancelar")
-                    }
+                    TextButton(onClick = { reservaARechazar = null; motivoRechazo = "" }) { Text("Cancelar") }
                 }
             )
         }
@@ -162,12 +191,22 @@ fun InspectoriaScreen(
 
 @Composable
 fun ReservaCard(
-    reserva: ReservaPendiente,
+    reserva: Reserva,
+    esHistorial: Boolean,
     onAprobar: () -> Unit,
     onRechazar: () -> Unit,
-    onVerDocumento: (String) -> Unit // Recibe la URL
+    onVerDocumento: (String) -> Unit
 ) {
     var expandido by remember { mutableStateOf(false) }
+
+    // Animación de color según el estado
+    val colorEstado by animateColorAsState(
+        targetValue = when (reserva.estado) {
+            "Aprobada" -> Color(0xFF4CAF50) // Verde
+            "Rechazada" -> Color(0xFFF44336) // Rojo
+            else -> MaterialTheme.colorScheme.primary
+        }, label = "ColorEstado"
+    )
 
     ElevatedCard(
         modifier = Modifier
@@ -177,22 +216,24 @@ fun ReservaCard(
         elevation = CardDefaults.elevatedCardElevation(defaultElevation = 4.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Event, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text(text = reserva.espacio, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                    Text(text = "${reserva.fecha} | ${reserva.horario}", style = MaterialTheme.typography.bodyMedium)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Event, contentDescription = null, tint = colorEstado)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
+                        Text(text = reserva.espacio, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        Text(text = "${reserva.fecha} | ${reserva.horario}", style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
-            }
-
-            if (!expandido) {
-                Text(
-                    text = "Toca para ver detalles...",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+                if (esHistorial) {
+                    Box(modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(colorEstado.copy(alpha = 0.2f)).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        Text(text = reserva.estado, color = colorEstado, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
 
             if (expandido) {
@@ -203,43 +244,31 @@ fun ReservaCard(
                 Text(text = "Solicitante: ${reserva.solicitante}", style = MaterialTheme.typography.bodyMedium)
                 Text(text = "Actividad: ${reserva.actividad}", style = MaterialTheme.typography.bodyMedium)
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Botón Ver Documento
-                OutlinedButton(
-                    onClick = { onVerDocumento(reserva.documentoUrl) }, // Envía la URL al clickear
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(Icons.Default.Description, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Ver Planificación Adjunta")
+                if (esHistorial && reserva.estado == "Rechazada") {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = "Motivo de rechazo:", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    Text(text = reserva.motivoRechazo, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Botones de Acción
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = onRechazar,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Rechazar")
+                if (!esHistorial) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    OutlinedButton(onClick = { onVerDocumento(reserva.documentoUrl) }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Description, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Ver Planificación Adjunta")
                     }
-
-                    Button(
-                        onClick = onAprobar,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Aprobar")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = onRechazar, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error), modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Rechazar")
+                        }
+                        Button(onClick = onAprobar, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary), modifier = Modifier.weight(1f)) {
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Aprobar")
+                        }
                     }
                 }
             }
