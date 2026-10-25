@@ -1,5 +1,7 @@
 package com.example.mpazreserva
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -11,17 +13,23 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.mpazreserva.ui.EditarPerfilScreen
 import com.example.mpazreserva.ui.InspectoriaScreen
 import com.example.mpazreserva.ui.LoginScreen
+import com.example.mpazreserva.ui.MisReservasScreen
 import com.example.mpazreserva.ui.RegisterScreen
 import com.example.mpazreserva.ui.SolicitudReservaScreen
 
@@ -35,53 +43,50 @@ class MainActivity : ComponentActivity() {
                 var usuarioLogueado by remember { mutableStateOf<Pair<String, String>?>(null) }
 
                 when (pantallaActual) {
-                    "BIENVENIDA" -> {
-                        PantallaBienvenidaInicial(onIrALogin = { pantallaActual = "LOGIN" })
-                    }
-                    "LOGIN" -> {
-                        LoginScreen(
-                            onLoginSuccess = { email, rol ->
-                                usuarioLogueado = Pair(email, rol)
-                                pantallaActual = "DASHBOARD"
-                                Toast.makeText(this, "Sesión iniciada como $rol", Toast.LENGTH_SHORT).show()
-                            },
-                            onIrARegistro = { pantallaActual = "REGISTRO" }
-                        )
-                    }
-                    "REGISTRO" -> {
-                        RegisterScreen(
-                            onRegistroExitoso = { email, rol ->
-                                usuarioLogueado = Pair(email, rol)
-                                pantallaActual = "DASHBOARD"
-                                Toast.makeText(this, "Registro exitoso", Toast.LENGTH_SHORT).show()
-                            },
-                            onVolverALogin = { pantallaActual = "LOGIN" }
-                        )
-                    }
-                    "DASHBOARD" -> {
-                        VistaBienvenidaUsuario(
-                            email = usuarioLogueado?.first ?: "",
-                            rol = usuarioLogueado?.second ?: "Solicitante",
-                            onCerrarSesion = {
-                                usuarioLogueado = null
-                                pantallaActual = "BIENVENIDA"
-                            },
-                            onNuevaReserva = { pantallaActual = "NUEVA_RESERVA" },
-                            onVerSolicitudes = { pantallaActual = "PANEL_INSPECTORIA" }
-                        )
-                    }
-                    "NUEVA_RESERVA" -> {
-                        SolicitudReservaScreen(
-                            emailSolicitante = usuarioLogueado?.first ?: "",
-                            onReservaCreada = { pantallaActual = "DASHBOARD" },
-                            onVolver = { pantallaActual = "DASHBOARD" }
-                        )
-                    }
-                    "PANEL_INSPECTORIA" -> {
-                        InspectoriaScreen(
-                            onVolver = { pantallaActual = "DASHBOARD" }
-                        )
-                    }
+                    "BIENVENIDA" -> PantallaBienvenidaInicial(onIrALogin = { pantallaActual = "LOGIN" })
+                    "LOGIN" -> LoginScreen(
+                        onLoginSuccess = { email, rol ->
+                            usuarioLogueado = Pair(email, rol)
+                            pantallaActual = "DASHBOARD"
+                            Toast.makeText(this, "Sesión iniciada como $rol", Toast.LENGTH_SHORT).show()
+                        },
+                        onIrARegistro = { pantallaActual = "REGISTRO" }
+                    )
+                    "REGISTRO" -> RegisterScreen(
+                        onRegistroExitoso = { email, rol ->
+                            usuarioLogueado = Pair(email, rol)
+                            pantallaActual = "DASHBOARD"
+                            Toast.makeText(this, "Registro exitoso", Toast.LENGTH_SHORT).show()
+                        },
+                        onVolverALogin = { pantallaActual = "LOGIN" }
+                    )
+                    "DASHBOARD" -> VistaBienvenidaUsuario(
+                        email = usuarioLogueado?.first ?: "",
+                        rol = usuarioLogueado?.second ?: "Solicitante",
+                        onCerrarSesion = {
+                            usuarioLogueado = null
+                            pantallaActual = "BIENVENIDA"
+                        },
+                        onNuevaReserva = { pantallaActual = "NUEVA_RESERVA" },
+                        onVerSolicitudes = { pantallaActual = "PANEL_INSPECTORIA" },
+                        onEditarPerfil = { pantallaActual = "EDITAR_PERFIL" },
+                        onVerMisReservas = { pantallaActual = "MIS_RESERVAS" } // <--- NUEVA PANTALLA
+                    )
+                    "NUEVA_RESERVA" -> SolicitudReservaScreen(
+                        emailSolicitante = usuarioLogueado?.first ?: "",
+                        onReservaCreada = { pantallaActual = "DASHBOARD" },
+                        onVolver = { pantallaActual = "DASHBOARD" }
+                    )
+                    "PANEL_INSPECTORIA" -> InspectoriaScreen(onVolver = { pantallaActual = "DASHBOARD" })
+                    "EDITAR_PERFIL" -> EditarPerfilScreen(
+                        emailActual = usuarioLogueado?.first ?: "",
+                        onGuardar = { pantallaActual = "DASHBOARD" },
+                        onVolver = { pantallaActual = "DASHBOARD" }
+                    )
+                    "MIS_RESERVAS" -> MisReservasScreen(
+                        emailActual = usuarioLogueado?.first ?: "",
+                        onVolver = { pantallaActual = "DASHBOARD" }
+                    )
                 }
             }
         }
@@ -121,13 +126,27 @@ fun VistaBienvenidaUsuario(
     rol: String,
     onCerrarSesion: () -> Unit,
     onNuevaReserva: () -> Unit,
-    onVerSolicitudes: () -> Unit
+    onVerSolicitudes: () -> Unit,
+    onEditarPerfil: () -> Unit,
+    onVerMisReservas: () -> Unit
 ) {
+    val context = LocalContext.current
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
                 title = { Text("Panel de $rol") },
-                actions = { IconButton(onClick = onCerrarSesion) { Icon(Icons.Default.ExitToApp, "Cerrar sesión") } },
+                actions = {
+                    if (rol == "Solicitante") {
+                        IconButton(onClick = {
+                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:+56912345678"))
+                            context.startActivity(intent)
+                        }) {
+                            Icon(Icons.Default.Phone, contentDescription = "Llamada de Emergencia")
+                        }
+                    }
+                    IconButton(onClick = onCerrarSesion) { Icon(Icons.Default.ExitToApp, "Cerrar sesión") }
+                },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             )
         },
@@ -142,23 +161,20 @@ fun VistaBienvenidaUsuario(
         Box(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), contentAlignment = Alignment.Center) {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-
-                    // AQUÍ ESTÁ EL CAMBIO PARA EL SALUDO PERSONALIZADO
                     val textoSaludo = if (rol == "Inspectoria") "¡Bienvenida, Inspectora!" else "¡Hola, $email!"
-
-                    Text(
-                        text = textoSaludo,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                        textAlign = TextAlign.Center
-                    )
-
+                    Text(text = textoSaludo, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(text = "Rol activo: $rol", style = MaterialTheme.typography.bodyLarge)
                     Spacer(modifier = Modifier.height(24.dp))
 
                     if (rol == "Solicitante") {
-                        Text("Usa el botón '+' para solicitar un espacio.", textAlign = TextAlign.Center)
+                        // AQUÍ ESTÁ EL NUEVO BOTÓN PARA EL SOLICITANTE
+                        Text("Revisa el estado de tus reservas aquí:", textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 12.dp))
+                        Button(onClick = onVerMisReservas, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.List, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Ver Mis Solicitudes")
+                        }
                     } else {
                         Text("Administra las solicitudes de reservas aquí:", textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 12.dp))
                         Button(onClick = onVerSolicitudes, modifier = Modifier.fillMaxWidth()) {
@@ -168,7 +184,15 @@ fun VistaBienvenidaUsuario(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(24.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedButton(onClick = onEditarPerfil, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Edit, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Editar Perfil")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
                     OutlinedButton(onClick = onCerrarSesion, modifier = Modifier.fillMaxWidth()) { Text("Cerrar Sesión") }
                 }
             }
