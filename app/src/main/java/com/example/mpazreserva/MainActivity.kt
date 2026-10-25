@@ -31,7 +31,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MaterialTheme {
-                // ESTADOS DE PANTALLA AHORA INCLUYE INSPECTORIA
                 var pantallaActual by remember { mutableStateOf("BIENVENIDA") }
                 var usuarioLogueado by remember { mutableStateOf<Pair<String, String>?>(null) }
 
@@ -68,7 +67,7 @@ class MainActivity : ComponentActivity() {
                                 pantallaActual = "BIENVENIDA"
                             },
                             onNuevaReserva = { pantallaActual = "NUEVA_RESERVA" },
-                            onVerSolicitudes = { pantallaActual = "PANEL_INSPECTORIA" } // Nuevo enlace
+                            onVerSolicitudes = { pantallaActual = "PANEL_INSPECTORIA" }
                         )
                     }
                     "NUEVA_RESERVA" -> {
@@ -122,7 +121,7 @@ fun VistaBienvenidaUsuario(
     rol: String,
     onCerrarSesion: () -> Unit,
     onNuevaReserva: () -> Unit,
-    onVerSolicitudes: () -> Unit // Nuevo parámetro
+    onVerSolicitudes: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -143,7 +142,17 @@ fun VistaBienvenidaUsuario(
         Box(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), contentAlignment = Alignment.Center) {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("¡Hola, $email!", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+
+                    // AQUÍ ESTÁ EL CAMBIO PARA EL SALUDO PERSONALIZADO
+                    val textoSaludo = if (rol == "Inspectoria") "¡Bienvenida, Inspectora!" else "¡Hola, $email!"
+
+                    Text(
+                        text = textoSaludo,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
+
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(text = "Rol activo: $rol", style = MaterialTheme.typography.bodyLarge)
                     Spacer(modifier = Modifier.height(24.dp))
@@ -151,7 +160,6 @@ fun VistaBienvenidaUsuario(
                     if (rol == "Solicitante") {
                         Text("Usa el botón '+' para solicitar un espacio.", textAlign = TextAlign.Center)
                     } else {
-                        // SI ES INSPECTORÍA, MUESTRA ESTE BOTÓN
                         Text("Administra las solicitudes de reservas aquí:", textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 12.dp))
                         Button(onClick = onVerSolicitudes, modifier = Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.FactCheck, contentDescription = null)
