@@ -33,6 +33,8 @@ import com.example.mpazreserva.ui.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.max
+import kotlin.math.min
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,7 +46,6 @@ class MainActivity : ComponentActivity() {
                 val context = LocalContext.current
                 val scope = rememberCoroutineScope()
 
-                // Instancia Singleton de Room SQLite
                 val db = remember { AppDatabase.getDatabase(context) }
                 val dao = db.appDao()
 
@@ -52,7 +53,6 @@ class MainActivity : ComponentActivity() {
                 var usuarioLogueado by remember { mutableStateOf<UserEntity?>(null) }
                 var listaReservas by remember { mutableStateOf<List<ReservationEntity>>(emptyList()) }
 
-                // Recarga de datos en hilo secundario (IO)
                 fun actualizarListaReservas() {
                     scope.launch(Dispatchers.IO) {
                         val usuario = usuarioLogueado
@@ -108,27 +108,35 @@ class MainActivity : ComponentActivity() {
                             val cleanPassword = password.trim()
                             val cleanNombre = nombre.trim()
 
-                            scope.launch(Dispatchers.IO) {
-                                val usuarioExistente = dao.obtenerUsuarioPorEmail(cleanEmail)
-                                if (usuarioExistente != null) {
-                                    withContext(Dispatchers.Main) {
-                                        Toast.makeText(context, "Este correo ya está registrado", Toast.LENGTH_LONG).show()
-                                    }
-                                } else {
-                                    val rol = if (cleanEmail.contains("inspectoria")) "Inspectoria" else "Solicitante"
-                                    val nuevoUsuario = UserEntity(
-                                        nombre = cleanNombre,
-                                        email = cleanEmail,
-                                        password = cleanPassword,
-                                        rol = rol
-                                    )
-                                    dao.registrarUsuario(nuevoUsuario) // Guardado directo garantizado antes de cambiar de pantalla
+                            // Restricción: No se permite crear más cuentas de Inspectoría
+                            if (cleanEmail.contains("inspectoria")) {
+                                Toast.makeText(
+                                    context,
+                                    "No se permite crear cuentas de Inspectoría. Utiliza la cuenta oficial.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } else {
+                                scope.launch(Dispatchers.IO) {
+                                    val usuarioExistente = dao.obtenerUsuarioPorEmail(cleanEmail)
+                                    if (usuarioExistente != null) {
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(context, "Este correo ya está registrado", Toast.LENGTH_LONG).show()
+                                        }
+                                    } else {
+                                        val nuevoUsuario = UserEntity(
+                                            nombre = cleanNombre,
+                                            email = cleanEmail,
+                                            password = cleanPassword,
+                                            rol = "Solicitante"
+                                        )
+                                        dao.registrarUsuario(nuevoUsuario)
 
-                                    withContext(Dispatchers.Main) {
-                                        usuarioLogueado = nuevoUsuario
-                                        actualizarListaReservas()
-                                        pantallaActual = "DASHBOARD"
-                                        Toast.makeText(context, "Cuenta creada con éxito", Toast.LENGTH_SHORT).show()
+                                        withContext(Dispatchers.Main) {
+                                            usuarioLogueado = nuevoUsuario
+                                            actualizarListaReservas()
+                                            pantallaActual = "DASHBOARD"
+                                            Toast.makeText(context, "Cuenta creada con éxito", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 }
                             }
@@ -153,14 +161,37 @@ class MainActivity : ComponentActivity() {
                         emailSolicitante = usuarioLogueado?.email ?: "",
                         onAgregarReserva = { nuevaReserva ->
                             scope.launch(Dispatchers.IO) {
-                                dao.crearReserva(nuevaReserva)
+                                val todasReservas = dao.obtenerTodasLasReservas()
+
+                                // Validación de solapamiento de horarios en el mismo espacio y fecha
+                                val conflicto = todasReservas.any { r ->
+                                    r.espacioNombre.equals(nuevaReserva.espacioNombre, ignoreCase = true) &&
+                                            r.fechaReserva == nuevaReserva.fechaReserva &&
+                                            r.estado != "Rechazada" &&
+                                            haySolapamientoHorario(r.horario, nuevaReserva.horario)
+                                }
+
                                 withContext(Dispatchers.Main) {
-                                    actualizarListaReservas()
-                                    pantallaActual = "DASHBOARD"
+                                    if (conflicto) {
+                                        Toast.makeText(
+                                            context,
+                                            "⚠️ El espacio '${nuevaReserva.espacioNombre}' ya tiene una reserva activa en ese horario.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        scope.launch(Dispatchers.IO) {
+                                            dao.crearReserva(nuevaReserva)
+                                            withContext(Dispatchers.Main) {
+                                                actualizarListaReservas()
+                                                pantallaActual = "DASHBOARD"
+                                                Toast.makeText(context, "Solicitud enviada a Inspectoría", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         },
-                        onReservaCreada = { pantallaActual = "DASHBOARD" },
+                        onReservaCreada = { },
                         onVolver = { pantallaActual = "DASHBOARD" }
                     )
 
@@ -206,6 +237,27 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
+
+// Función auxiliar para determinar choque de rangos de horas ("08:30 - 10:00")
+fun haySolapamientoHorario(horario1: String, horario2: String): Boolean {
+    fun aMinutos(hStr: String): Int {
+        val partes = hStr.trim().split(":")
+        if (partes.size < 2) return 0
+        return (partes[0].toIntOrNull() ?: 0) * 60 + (partes[1].toIntOrNull() ?: 0)
+    }
+
+    val partes1 = horario1.split("-")
+    val partes2 = horario2.split("-")
+
+    if (partes1.size < 2 || partes2.size < 2) return false
+
+    val inicio1 = aMinutos(partes1[0])
+    val fin1 = aMinutos(partes1[1])
+    val inicio2 = aMinutos(partes2[0])
+    val fin2 = aMinutos(partes2[1])
+
+    return max(inicio1, inicio2) < min(fin1, fin2)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
