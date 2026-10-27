@@ -23,7 +23,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.mpazreserva.data.ReservationEntity
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -58,6 +60,22 @@ fun SolicitudReservaScreen(
         uri?.let { documentoUri = it }
     }
 
+    // Función auxiliar para verificar si hay al menos 24 horas de anticipación
+    fun esConAnticipacion24Horas(fechaStr: String, horaStr: String): Boolean {
+        if (fechaStr.isBlank() || horaStr.isBlank()) return false
+        return try {
+            val format = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+            val fechaHoraReserva = format.parse("$fechaStr $horaStr") ?: return false
+            val tiempoActualMs = System.currentTimeMillis()
+            val tiempoReservaMs = fechaHoraReserva.time
+
+            // 24 horas en milisegundos = 24 * 60 * 60 * 1000 = 86.400.000 ms
+            (tiempoReservaMs - tiempoActualMs) >= 86_400_000L
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     val calendar = Calendar.getInstance()
     val datePickerDialog = DatePickerDialog(
         context,
@@ -79,7 +97,9 @@ fun SolicitudReservaScreen(
         calendar.get(Calendar.MONTH),
         calendar.get(Calendar.DAY_OF_MONTH)
     )
-    datePickerDialog.datePicker.minDate = System.currentTimeMillis()
+
+    // Mínimo 24 horas en el calendario (empieza a permitir elegir desde mañana)
+    datePickerDialog.datePicker.minDate = System.currentTimeMillis() + (24 * 60 * 60 * 1000L)
 
     fun aMinutos(horaStr: String): Int {
         if (!horaStr.contains(":")) return 0
@@ -195,7 +215,7 @@ fun SolicitudReservaScreen(
                     value = fechaReserva,
                     onValueChange = {},
                     readOnly = true,
-                    label = { Text("Fecha (Lunes a Viernes) *") },
+                    label = { Text("Fecha (Mínimo 24 hrs de anticipación) *") },
                     trailingIcon = {
                         IconButton(onClick = { datePickerDialog.show() }) {
                             Icon(Icons.Default.DateRange, contentDescription = "Abrir calendario")
@@ -318,6 +338,8 @@ fun SolicitudReservaScreen(
                 onClick = {
                     if (espacioSeleccionado.isBlank() || fechaReserva.isBlank() || horaInicio.isBlank() || horaTermino.isBlank() || actividad.isBlank()) {
                         errorMensaje = "⚠️ Por favor completa todos los campos obligatorios."
+                    } else if (!esConAnticipacion24Horas(fechaReserva, horaInicio)) {
+                        errorMensaje = "❌ Las reservas deben realizarse con al menos 24 horas de anticipación."
                     } else {
                         val nuevaReserva = ReservationEntity(
                             solicitanteEmail = emailSolicitante,
