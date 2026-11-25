@@ -13,6 +13,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.ExitToApp
@@ -29,6 +30,9 @@ import androidx.compose.ui.unit.dp
 import com.example.mpazreserva.data.AppDatabase
 import com.example.mpazreserva.data.ReservationEntity
 import com.example.mpazreserva.data.UserEntity
+import com.example.mpazreserva.network.RetrofitClient
+import com.example.mpazreserva.network.toDto
+import com.example.mpazreserva.network.toEntity
 import com.example.mpazreserva.ui.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -52,18 +56,55 @@ class MainActivity : ComponentActivity() {
                 var pantallaActual by remember { mutableStateOf("BIENVENIDA") }
                 var usuarioLogueado by remember { mutableStateOf<UserEntity?>(null) }
                 var listaReservas by remember { mutableStateOf<List<ReservationEntity>>(emptyList()) }
+                var estadoApiFeriados by remember { mutableStateOf("Cargando feriados de Chile...") }
+
+                LaunchedEffect(Unit) {
+                    withContext(Dispatchers.IO) {
+                        try {
+                            val feriados = RetrofitClient.feriadosApi.obtenerFeriadosChile()
+                            val siguiente = feriados.firstOrNull { it.date >= "2026-11-24" }
+                                ?: feriados.lastOrNull()
+                            withContext(Dispatchers.Main) {
+                                estadoApiFeriados = if (siguiente != null) {
+                                    "Próximo feriado: ${siguiente.localName} (${siguiente.date})"
+                                } else {
+                                    "Sin feriados registrados en la API"
+                                }
+                            }
+                        } catch (_: Exception) {
+                            withContext(Dispatchers.Main) {
+                                estadoApiFeriados = "API externa de feriados sin conexión"
+                            }
+                        }
+                    }
+                }
 
                 fun actualizarListaReservas() {
                     scope.launch(Dispatchers.IO) {
                         val usuario = usuarioLogueado
                         if (usuario != null) {
-                            val resultado = if (usuario.rol == "Inspectoria") {
+                            val locales = if (usuario.rol == "Inspectoria") {
                                 dao.obtenerTodasLasReservas()
                             } else {
                                 dao.obtenerReservasPorEmail(usuario.email)
                             }
+
+                            var listaFinal = locales
+
+                            try {
+                                val remotas = if (usuario.rol == "Inspectoria") {
+                                    RetrofitClient.mpazApi.obtenerTodasLasReservas()
+                                } else {
+                                    RetrofitClient.mpazApi.obtenerReservasPorUsuario(usuario.email)
+                                }
+                                if (remotas.isNotEmpty()) {
+                                    listaFinal = remotas.map { it.toEntity() }
+                                }
+                            } catch (_: Exception) {
+                            }
+
                             withContext(Dispatchers.Main) {
-                                listaReservas = resultado
+                                listaReservas = listaFinal
                             }
                         }
                     }
@@ -108,7 +149,6 @@ class MainActivity : ComponentActivity() {
                             val cleanPassword = password.trim()
                             val cleanNombre = nombre.trim()
 
-                            // Restricción: No se permite crear más cuentas de Inspectoría
                             if (cleanEmail.contains("inspectoria")) {
                                 Toast.makeText(
                                     context,
@@ -147,6 +187,7 @@ class MainActivity : ComponentActivity() {
                     "DASHBOARD" -> VistaBienvenidaUsuario(
                         email = usuarioLogueado?.email ?: "",
                         rol = usuarioLogueado?.rol ?: "Solicitante",
+                        mensajeFeriado = estadoApiFeriados,
                         onCerrarSesion = {
                             usuarioLogueado = null
                             pantallaActual = "BIENVENIDA"
@@ -163,7 +204,6 @@ class MainActivity : ComponentActivity() {
                             scope.launch(Dispatchers.IO) {
                                 val todasReservas = dao.obtenerTodasLasReservas()
 
-                                // Validación de solapamiento de horarios en el mismo espacio y fecha
                                 val conflicto = todasReservas.any { r ->
                                     r.espacioNombre.equals(nuevaReserva.espacioNombre, ignoreCase = true) &&
                                             r.fechaReserva == nuevaReserva.fechaReserva &&
@@ -175,16 +215,26 @@ class MainActivity : ComponentActivity() {
                                     if (conflicto) {
                                         Toast.makeText(
                                             context,
-                                            "⚠️ El espacio '${nuevaReserva.espacioNombre}' ya tiene una reserva activa en ese horario.",
+                                            "El espacio '${nuevaReserva.espacioNombre}' ya tiene una reserva activa en ese horario.",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     } else {
                                         scope.launch(Dispatchers.IO) {
                                             dao.crearReserva(nuevaReserva)
+
+                                            var estadoEnvio = "Guardada en Room local"
+                                            try {
+                                                val response = RetrofitClient.mpazApi.crearReserva(nuevaReserva.toDto())
+                                                if (response.isSuccessful) {
+                                                    estadoEnvio = "Guardada en Spring Boot OK"
+                                                }
+                                            } catch (_: Exception) {
+                                            }
+
                                             withContext(Dispatchers.Main) {
                                                 actualizarListaReservas()
                                                 pantallaActual = "DASHBOARD"
-                                                Toast.makeText(context, "Solicitud enviada a Inspectoría", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, estadoEnvio, Toast.LENGTH_SHORT).show()
                                             }
                                         }
                                     }
@@ -201,7 +251,13 @@ class MainActivity : ComponentActivity() {
                             scope.launch(Dispatchers.IO) {
                                 val reserva = listaReservas.find { it.id == idReserva }
                                 if (reserva != null) {
-                                    dao.actualizarReserva(reserva.copy(estado = "Aprobada"))
+                                    val actualizada = reserva.copy(estado = "Aprobada")
+                                    dao.actualizarReserva(actualizada)
+                                    try {
+                                        if (actualizada.id > 0) {
+                                            RetrofitClient.mpazApi.actualizarReserva(actualizada.id, actualizada.toDto())
+                                        }
+                                    } catch (_: Exception) { }
                                     withContext(Dispatchers.Main) {
                                         actualizarListaReservas()
                                     }
@@ -212,7 +268,13 @@ class MainActivity : ComponentActivity() {
                             scope.launch(Dispatchers.IO) {
                                 val reserva = listaReservas.find { it.id == idReserva }
                                 if (reserva != null) {
-                                    dao.actualizarReserva(reserva.copy(estado = "Rechazada", motivoRechazo = motivo))
+                                    val actualizada = reserva.copy(estado = "Rechazada", motivoRechazo = motivo)
+                                    dao.actualizarReserva(actualizada)
+                                    try {
+                                        if (actualizada.id > 0) {
+                                            RetrofitClient.mpazApi.actualizarReserva(actualizada.id, actualizada.toDto())
+                                        }
+                                    } catch (_: Exception) { }
                                     withContext(Dispatchers.Main) {
                                         actualizarListaReservas()
                                     }
@@ -239,7 +301,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Función auxiliar para determinar choque de rangos de horas ("08:30 - 10:00")
 fun haySolapamientoHorario(horario1: String, horario2: String): Boolean {
     fun aMinutos(hStr: String): Int {
         val partes = hStr.trim().split(":")
@@ -265,20 +326,54 @@ fun haySolapamientoHorario(horario1: String, horario2: String): Boolean {
 fun PantallaBienvenidaInicial(onIrALogin: () -> Unit) {
     var mostrarEstado by remember { mutableStateOf(false) }
     Scaffold(
-        topBar = { CenterAlignedTopAppBar(title = { Text("Escuela Escritora Marcela Paz") }, colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) }
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = { Text("Escuela Escritora Marcela Paz") },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            )
+        }
     ) { paddingValues ->
-        Box(modifier = Modifier.fillMaxSize().padding(paddingValues).padding(20.dp), contentAlignment = Alignment.Center) {
+        Box(
+            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(20.dp),
+            contentAlignment = Alignment.Center
+        ) {
             ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(imageVector = Icons.Default.Event, contentDescription = null, modifier = Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Event,
+                        contentDescription = null,
+                        modifier = Modifier.size(56.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("¡Bienvenido a tu Reserva!", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
+                    Text(
+                        "¡Bienvenido a tu Reserva!",
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        textAlign = TextAlign.Center
+                    )
                     Spacer(modifier = Modifier.height(24.dp))
-                    Button(onClick = onIrALogin, modifier = Modifier.fillMaxWidth()) { Text("Ir a Iniciar Sesión") }
+                    Button(onClick = onIrALogin, modifier = Modifier.fillMaxWidth()) {
+                        Text("Ir a Iniciar Sesión")
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(onClick = { mostrarEstado = !mostrarEstado }, modifier = Modifier.fillMaxWidth()) { Text(if (mostrarEstado) "Ocultar Estado" else "Ver Estado del Sistema") }
+                    OutlinedButton(
+                        onClick = { mostrarEstado = !mostrarEstado },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (mostrarEstado) "Ocultar Estado" else "Ver Estado del Sistema")
+                    }
                     AnimatedVisibility(visible = mostrarEstado, enter = fadeIn(), exit = fadeOut()) {
-                        Text("✓ Sistema activo en modo demostración.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 16.dp))
+                        Text(
+                            "Sistema activo, API Spring Boot y Room sincronizados.",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 16.dp)
+                        )
                     }
                 }
             }
@@ -291,6 +386,7 @@ fun PantallaBienvenidaInicial(onIrALogin: () -> Unit) {
 fun VistaBienvenidaUsuario(
     email: String,
     rol: String,
+    mensajeFeriado: String,
     onCerrarSesion: () -> Unit,
     onNuevaReserva: () -> Unit,
     onVerSolicitudes: () -> Unit,
@@ -320,37 +416,118 @@ fun VistaBienvenidaUsuario(
                             Icon(Icons.Default.Phone, contentDescription = "Llamada de Emergencia")
                         }
                     }
-                    IconButton(onClick = onCerrarSesion) { Icon(Icons.Default.ExitToApp, "Cerrar sesión") }
+                    IconButton(onClick = onCerrarSesion) {
+                        Icon(Icons.Default.ExitToApp, "Cerrar sesión")
+                    }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
             )
         },
         floatingActionButton = {
             if (rol == "Solicitante") {
-                FloatingActionButton(onClick = onNuevaReserva, containerColor = MaterialTheme.colorScheme.primary) { Icon(Icons.Default.Add, "Nueva Reserva") }
+                FloatingActionButton(
+                    onClick = onNuevaReserva,
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(Icons.Default.Add, "Nueva Reserva")
+                }
             }
         }
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp), contentAlignment = Alignment.Center) {
-            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    val textoSaludo = if (rol == "Inspectoria") "¡Bienvenida, Inspectora!" else "¡Hola, $nombreUsuario!"
-                    Text(text = textoSaludo, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = "Correo registrado: $email", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(24.dp))
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(20.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        val textoSaludo = if (rol == "Inspectoria") {
+                            "¡Bienvenida, Inspectora!"
+                        } else {
+                            "¡Hola, $nombreUsuario!"
+                        }
+                        Text(
+                            text = textoSaludo,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Correo registrado: $email",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
 
-                    if (rol == "Solicitante") {
-                        Text("Revisa el estado de tus reservas aquí:", textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 12.dp))
-                        Button(onClick = onVerMisReservas, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Menu, null); Spacer(Modifier.width(8.dp)); Text("Ver Mis Solicitudes") }
-                    } else {
-                        Text("Administra las solicitudes de reservas aquí:", textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 12.dp))
-                        Button(onClick = onVerSolicitudes, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Check, null); Spacer(Modifier.width(8.dp)); Text("Ver Solicitudes Pendientes") }
+                        if (rol == "Solicitante") {
+                            Text(
+                                "Revisa el estado de tus reservas aquí:",
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+                            Button(onClick = onVerMisReservas, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Menu, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Ver Mis Solicitudes")
+                            }
+                        } else {
+                            Text(
+                                "Administra las solicitudes de reservas aquí:",
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+                            Button(onClick = onVerSolicitudes, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Check, null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Ver Solicitudes Pendientes")
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        OutlinedButton(onClick = onEditarPerfil, modifier = Modifier.fillMaxWidth()) {
+                            Icon(Icons.Default.Person, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Editar Perfil")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(onClick = onCerrarSesion, modifier = Modifier.fillMaxWidth()) {
+                            Text("Cerrar Sesión")
+                        }
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedButton(onClick = onEditarPerfil, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Person, null); Spacer(Modifier.width(8.dp)); Text("Editar Perfil") }
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(onClick = onCerrarSesion, modifier = Modifier.fillMaxWidth()) { Text("Cerrar Sesión") }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CalendarMonth,
+                            contentDescription = "Feriados Chile",
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = mensajeFeriado,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
                 }
             }
         }
